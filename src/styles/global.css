@@ -236,12 +236,6 @@ button {
   color: rgba(255, 255, 255, 0.6);
 }
 
-.lyric-falling.status-active {
-  color: var(--accent);
-  text-shadow: 0 0 20px var(--accent-glow);
-  animation: glow-pulse 0.8s ease-in-out infinite alternate;
-}
-
 .lyric-falling.status-completed {
   color: var(--success);
   opacity: 0.3;
@@ -429,6 +423,33 @@ button {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* 游戏结束遮罩 */
+.game-over-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(10, 10, 26, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 30;
+  animation: fadeIn 0.3s ease;
+}
+
+.game-over-overlay h2 {
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, var(--accent), var(--success));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.game-over-overlay p {
+  color: var(--text-secondary);
 }
 
 /* 反馈提示 */

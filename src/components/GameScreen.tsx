@@ -80,8 +80,9 @@ export default function GameScreen() {
     )
   }
 
-  // 找到当前活跃歌词
-  const activeLyric = gameState.lyrics.find(l => l.status === 'active')
+  // 找到当前目标歌词（正在飘落中）
+  const activeLyric = gameState.lyrics.find(l => l.status === 'falling' && l.typed > 0)
+    ?? gameState.lyrics.find(l => l.status === 'falling')
 
   return (
     <div className="game-screen">
@@ -125,6 +126,14 @@ export default function GameScreen() {
             {f.result === 'perfect' ? 'PERFECT' : f.result === 'good' ? 'GOOD' : 'WRONG'}
           </div>
         ))}
+
+        {/* 游戏结束遮罩 */}
+        {gameState.phase === 'finished' && (
+          <div className="game-over-overlay">
+            <h2>🎵 游戏结束</h2>
+            <p>正在结算...</p>
+          </div>
+        )}
 
         {/* 飘落歌词 */}
         {gameState.lyrics.map(lyric => (
