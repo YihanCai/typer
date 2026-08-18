@@ -20,11 +20,10 @@ export interface Song {
 
 /** 歌词在游戏中的生命周期状态 */
 export type LyricStatus =
-  | 'pending'    // 还未到时间
-  | 'falling'    // 正在飘落
-  | 'active'     // 到达判定区，可输入
+  | 'pending'    // 还未进入屏幕
+  | 'falling'    // 正在飘落（全程可输入）
   | 'completed'  // 已正确打出
-  | 'missed'     // 超时未完成
+  | 'missed'     // 滑出屏幕未完成
 
 /** 游戏中的歌词实例（带运行时状态） */
 export interface LyricState {

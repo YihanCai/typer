@@ -1,10 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { LyricLine, LyricState, LyricStatus, GameState, JudgeResult } from '../types'
 
+/** 歌词从屏幕顶部飘到判定线的时间（秒） */
 const FALL_DURATION = 2.5
-const DEFAULT_DURATION = 2.5
+/** 滑过判定线后、完全消失前的宽限期（秒），超时判 miss */
+const EXIT_SECONDS = 0.5
+/** 完美判定的窗口比例（以飘落中点为准） */
 const PERFECT_RATIO = 0.3
-const TICK_INTERVAL = 50 // ms
+/** 游戏循环间隔（ms） */
+const TICK_INTERVAL = 50
 
 export interface FeedbackItem {
   id: number
@@ -18,7 +22,7 @@ function createInitialState(lyrics: LyricLine[]): GameState {
     song: null,
     currentTime: 0,
     lyrics: sorted.map((line) => ({
-      line: { ...line, duration: line.duration || DEFAULT_DURATION },
+      line: { ...line },
       status: 'pending' as LyricStatus,
       typed: 0,
       score: 0,
@@ -32,17 +36,18 @@ function createInitialState(lyrics: LyricLine[]): GameState {
   }
 }
 
+/** 计算歌词位置（0=顶部, 1=判定线, >1 滑出屏幕） */
 function calcPosition(lyric: LyricState, now: number): number {
-  const { time, duration } = lyric.line
+  const { time } = lyric.line
   const fallStart = time - FALL_DURATION
   if (lyric.status === 'pending') return -0.5
-  if (lyric.status === 'completed' || lyric.status === 'missed') return 1.1
-  if (now <= time) {
-    return (now - fallStart) / FALL_DURATION
-  } else {
-    const activeProgress = (now - time) / duration
-    return Math.min(1, activeProgress * 0.1 + 1)
-  }
+  if (lyric.status === 'completed' || lyric.status === 'missed') return -0.5
+  return Math.max(0, Math.min((now - fallStart) / FALL_DURATION, 1.3))
+}
+
+/** 是否全部歌词都已终结（completed 或 missed） */
+function allDoneLyrics(lyrics: LyricState[]): boolean {
+  return lyrics.length > 0 && lyrics.every(l => l.status === 'completed' || l.status === 'missed')
 }
 
 export function useGameEngine() {
@@ -60,6 +65,13 @@ export function useGameEngine() {
   const feedbackIdRef = useRef(0)
   const phaseRef = useRef<'idle' | 'playing' | 'paused' | 'finished'>('idle')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 弹出判定反馈
+  const emitFeedback = useCallback((result: JudgeResult) => {
+    const id = ++feedbackIdRef.current
+    setFeedback(prev => [...prev, { id, result }])
+    setTimeout(() => setFeedback(prev => prev.filter(f => f.id !== id)), 600)
+  }, [])
 
   // 构建新 state 触发重渲染
   const buildState = useCallback((elapsed: number): GameState => ({
@@ -81,22 +93,18 @@ export function useGameEngine() {
 
     const elapsed = (performance.now() - startTimeRef.current) / 1000
 
-    // 更新歌词状态
+    // 状态流转：pending → falling（进入屏幕即飘落、即可输入）
     for (const lyric of lyricsRef.current) {
       if (lyric.status === 'completed' || lyric.status === 'missed') continue
-      const { time, duration } = lyric.line
+      const { time } = lyric.line
       const fallStart = time - FALL_DURATION
-      const activeEnd = time + duration
-
-      if (elapsed < fallStart) lyric.status = 'pending'
-      else if (elapsed < time) lyric.status = 'falling'
-      else if (elapsed < activeEnd) lyric.status = 'active'
+      lyric.status = elapsed < fallStart ? 'pending' : 'falling'
     }
 
-    // 检查超时
+    // 超时检查：滑出屏幕（含宽限期）未完成 → miss
     for (const lyric of lyricsRef.current) {
-      if (lyric.status !== 'active') continue
-      if (elapsed > lyric.line.time + lyric.line.duration) {
+      if (lyric.status !== 'falling') continue
+      if (elapsed > lyric.line.time + EXIT_SECONDS) {
         lyric.status = 'missed'
         lyric.score = -50
         comboRef.current = 0
@@ -104,12 +112,17 @@ export function useGameEngine() {
       }
     }
 
+    // 全部完成/漏掉 → 游戏结束
+    if (allDoneLyrics(lyricsRef.current)) {
+      phaseRef.current = 'finished'
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+
     setGameState(buildState(elapsed))
   }, [buildState])
 
   // 开始游戏
   const startGame = useCallback((lyrics: LyricLine[]) => {
-    // 清理旧循环
     if (intervalRef.current) clearInterval(intervalRef.current)
 
     const initial = createInitialState(lyrics)
@@ -122,80 +135,74 @@ export function useGameEngine() {
     missedRef.current = 0
     phaseRef.current = 'playing'
 
-    // 初始渲染
     setGameState(buildState(0))
-
-    // 直接启动游戏循环
     intervalRef.current = setInterval(tick, TICK_INTERVAL)
   }, [buildState, tick])
 
-  // 输入字符
+  // 输入字符（飘落全程可输入）
   const inputChar = useCallback((char: string) => {
     if (phaseRef.current !== 'playing') return
 
-    const active = lyricsRef.current.find(l => l.status === 'active')
-    if (!active) return
+    // 当前目标：正在输入中的歌词优先，否则取第一个飘落中的
+    const target = lyricsRef.current.find(l => l.status === 'falling' && l.typed > 0)
+      ?? lyricsRef.current.find(l => l.status === 'falling')
+    if (!target) return
 
-    const expected = active.line.text
-    const nextChar = expected[active.typed]
+    const expected = target.line.text
+    const nextChar = expected[target.typed]
 
     if (char === nextChar) {
-      active.typed++
-      if (active.typed >= expected.length) {
-        active.status = 'completed'
+      target.typed++
+      if (target.typed >= expected.length) {
+        // 完成一句
+        target.status = 'completed'
         completedRef.current++
         comboRef.current++
         if (comboRef.current > maxComboRef.current) {
           maxComboRef.current = comboRef.current
         }
 
+        // 时机评分：以飘落窗口为基准，正点（到达判定线）成功率最高
         const elapsed = (performance.now() - startTimeRef.current) / 1000
-        const timeSinceActive = elapsed - active.line.time
-        const windowRatio = timeSinceActive / active.line.duration
-        const timingBonus = Math.abs(windowRatio - 0.5) < PERFECT_RATIO / 2 ? 1.5 : 1.0
+        const windowLength = FALL_DURATION + EXIT_SECONDS
+        const progress = (elapsed - (target.line.time - FALL_DURATION)) / windowLength
+        const perfectCenter = FALL_DURATION / windowLength
+        const timingBonus = Math.abs(progress - perfectCenter) < PERFECT_RATIO / 2 ? 1.5 : 1.0
+
         const score = Math.round(100 * timingBonus)
-        active.score = score
+        target.score = score
         scoreRef.current += score
 
-        const result: JudgeResult = timingBonus > 1.0 ? 'perfect' : 'good'
-        const id = ++feedbackIdRef.current
-        setFeedback(prev => [...prev, { id, result }])
-        setTimeout(() => setFeedback(prev => prev.filter(f => f.id !== id)), 600)
+        emitFeedback(timingBonus > 1.0 ? 'perfect' : 'good')
 
         // 检查是否全部完成
-        const allDone = lyricsRef.current.every(l => l.status === 'completed' || l.status === 'missed')
-        if (allDone) {
+        if (allDoneLyrics(lyricsRef.current)) {
           phaseRef.current = 'finished'
           if (intervalRef.current) clearInterval(intervalRef.current)
         }
-
-        setGameState(buildState(elapsed))
       }
     } else {
       scoreRef.current = Math.max(0, scoreRef.current - 30)
       comboRef.current = 0
-      const id = ++feedbackIdRef.current
-      setFeedback(prev => [...prev, { id, result: 'wrong' as JudgeResult }])
-      setTimeout(() => setFeedback(prev => prev.filter(f => f.id !== id)), 600)
+      emitFeedback('wrong')
     }
-  }, [buildState])
+  }, [emitFeedback])
 
-  // 提前输入检查
+  // 提前输入检查：歌词还未进入屏幕就打了它的首字符
   const checkEarlyInput = useCallback((char: string): boolean => {
     if (phaseRef.current !== 'playing') return false
-    const hasActive = lyricsRef.current.some(l => l.status === 'active')
-    if (hasActive) return false
-    const falling = lyricsRef.current.find(l => l.status === 'falling')
-    if (falling && falling.line.text[0] === char) {
+    const hasFalling = lyricsRef.current.some(l => l.status === 'falling')
+    if (hasFalling) return false // 有飘落中的歌词，交给 inputChar 正常处理
+
+    const next = lyricsRef.current.find(l => l.status === 'pending')
+    if (next && next.line.text[0] === char) {
       scoreRef.current = Math.max(0, scoreRef.current - 30)
       comboRef.current = 0
-      const id = ++feedbackIdRef.current
-      setFeedback(prev => [...prev, { id, result: 'wrong' as JudgeResult }])
-      setTimeout(() => setFeedback(prev => prev.filter(f => f.id !== id)), 600)
+      emitFeedback('wrong')
       return true
     }
     return false
-  }, [])
+  }, [emitFeedback])
 
   // 获取歌词位置
   const getLyricPosition = useCallback((lyric: LyricState): number => {
