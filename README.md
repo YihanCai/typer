@@ -91,7 +91,17 @@ interface LyricLine {
 }
 ```
 
-当前内置一首极简测试曲（8 句短单词），用于验证核心机制。后续计划接入完整歌曲歌词与 LRC 导入。
+当前内置 1 首测试曲（极简短词，固定时间轴）+ 5 首真实歌曲：
+
+| 歌曲 | 歌手 |
+|------|------|
+| Yesterday | The Beatles |
+| Hey Jude | The Beatles |
+| Counting Stars | OneRepublic |
+| Viva La Vida | Coldplay |
+| Gloria | The Lumineers |
+
+真实歌曲的时间轴由生成器按句长自动排布（`getFallDuration` 随句长伸缩，保证窗口首尾相接不重叠）。后续计划支持 LRC 文件导入。
 
 ## 后续规划
 
