@@ -1,12 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { LyricLine, LyricState, LyricStatus, GameState, JudgeResult } from '../types'
+import { getFallDuration, EXIT_SECONDS, PERFECT_RATIO } from './timing'
 
-/** 歌词从屏幕顶部飘到判定线的时间（秒） */
-const FALL_DURATION = 2.5
-/** 滑过判定线后、完全消失前的宽限期（秒），超时判 miss */
-const EXIT_SECONDS = 0.5
-/** 完美判定的窗口比例（以飘落中点为准） */
-const PERFECT_RATIO = 0.3
 /** 游戏循环间隔（ms） */
 const TICK_INTERVAL = 50
 
@@ -39,10 +34,11 @@ function createInitialState(lyrics: LyricLine[]): GameState {
 /** 计算歌词位置（0=顶部, 1=判定线, >1 滑出屏幕） */
 function calcPosition(lyric: LyricState, now: number): number {
   const { time } = lyric.line
-  const fallStart = time - FALL_DURATION
+  const fallDur = getFallDuration(lyric.line.text)
+  const fallStart = time - fallDur
   if (lyric.status === 'pending') return -0.5
   if (lyric.status === 'completed' || lyric.status === 'missed') return -0.5
-  return Math.max(0, Math.min((now - fallStart) / FALL_DURATION, 1.3))
+  return Math.max(0, Math.min((now - fallStart) / fallDur, 1.3))
 }
 
 /** 是否全部歌词都已终结（completed 或 missed） */
@@ -97,7 +93,7 @@ export function useGameEngine() {
     for (const lyric of lyricsRef.current) {
       if (lyric.status === 'completed' || lyric.status === 'missed') continue
       const { time } = lyric.line
-      const fallStart = time - FALL_DURATION
+      const fallStart = time - getFallDuration(lyric.line.text)
       lyric.status = elapsed < fallStart ? 'pending' : 'falling'
     }
 
@@ -162,11 +158,12 @@ export function useGameEngine() {
           maxComboRef.current = comboRef.current
         }
 
-        // 时机评分：以飘落窗口为基准，正点（到达判定线）成功率最高
+        // 时机评分：以该句的飘落窗口为基准，正点（到达判定线）成功率最高
         const elapsed = (performance.now() - startTimeRef.current) / 1000
-        const windowLength = FALL_DURATION + EXIT_SECONDS
-        const progress = (elapsed - (target.line.time - FALL_DURATION)) / windowLength
-        const perfectCenter = FALL_DURATION / windowLength
+        const fallDur = getFallDuration(target.line.text)
+        const windowLength = fallDur + EXIT_SECONDS
+        const progress = (elapsed - (target.line.time - fallDur)) / windowLength
+        const perfectCenter = fallDur / windowLength
         const timingBonus = Math.abs(progress - perfectCenter) < PERFECT_RATIO / 2 ? 1.5 : 1.0
 
         const score = Math.round(100 * timingBonus)
@@ -186,7 +183,11 @@ export function useGameEngine() {
       comboRef.current = 0
       emitFeedback('wrong')
     }
-  }, [emitFeedback])
+
+    // 立即推送最新状态：最后一句完成时 interval 会被清除，
+    // 若不在此渲染，React 将停留在上一帧（表现为"卡在最后一个字母"）
+    setGameState(buildState((performance.now() - startTimeRef.current) / 1000))
+  }, [emitFeedback, buildState])
 
   // 提前输入检查：歌词还未进入屏幕就打了它的首字符
   const checkEarlyInput = useCallback((char: string): boolean => {
