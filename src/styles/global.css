@@ -170,6 +170,23 @@ button {
   animation: pulse 0.3s ease;
 }
 
+.game-header .stats .mute-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-size: 1rem;
+  padding: 2px 8px;
+  line-height: 1.4;
+  transition: background 0.15s;
+}
+
+.game-header .stats .mute-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.game-header .stats .mute-btn.muted {
+  opacity: 0.5;
+}
+
 .game-header .back-btn {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);

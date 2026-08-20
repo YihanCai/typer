@@ -1,7 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getSongById } from '../data/songs'
 import { useGameEngine } from '../game/useGameEngine'
+import { sfx } from '../game/sfx'
 import type { LyricState } from '../types'
 
 export default function GameScreen() {
@@ -11,6 +12,13 @@ export default function GameScreen() {
   const inputRef = useRef<HTMLInputElement>(null)
   const { gameState, feedback, startGame, inputChar, checkEarlyInput, getLyricPosition } = useGameEngine()
   const startedRef = useRef(false)
+  const [muted, setMuted] = useState(sfx.isMuted())
+
+  const toggleMute = useCallback(() => {
+    const next = !muted
+    sfx.setMuted(next)
+    setMuted(next)
+  }, [muted])
 
   // 自动开始游戏
   useEffect(() => {
@@ -95,6 +103,13 @@ export default function GameScreen() {
           {song.title} — {song.artist}
         </div>
         <div className="stats">
+          <button
+            className={`mute-btn ${muted ? 'muted' : ''}`}
+            onClick={toggleMute}
+            title={muted ? '开启音效' : '静音'}
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
             时间: {gameState.currentTime.toFixed(1)}s
           </span>
