@@ -28,6 +28,27 @@ function buildLyrics(lines: Array<string | [string, number]>, leadIn = 0.5): Lyr
   })
 }
 
+/**
+ * 将一首完整歌曲按歌词行数切分为 N 段，每段成为独立可玩的曲目
+ * 时间轴各自重新生成，段落之间有独立的分数结算
+ */
+function makeSongParts(
+  base: { id: string; title: string; artist: string; lines: string[] },
+  partCount: number,
+): Song[] {
+  const size = Math.ceil(base.lines.length / partCount)
+  return Array.from({ length: partCount }, (_, i) => {
+    const chunk = base.lines.slice(i * size, Math.min((i + 1) * size, base.lines.length))
+    if (chunk.length === 0) return null
+    return {
+      id: `${base.id}-p${i + 1}`,
+      title: `${base.title} · 第${i + 1}/${partCount}段`,
+      artist: base.artist,
+      lyrics: buildLyrics(chunk),
+    }
+  }).filter((s): s is Song => s !== null)
+}
+
 export const songs: Song[] = [
   // ===== 测试曲：极简短词，固定时间轴，验证核心机制 =====
   {
@@ -47,11 +68,12 @@ export const songs: Song[] = [
   },
 
   // ===== 真实歌曲 =====
-  {
+  // Yesterday 拆分为 3 段练习曲（每段独立结算，难度可控）
+  ...makeSongParts({
     id: 'yesterday',
     title: 'Yesterday',
     artist: 'The Beatles',
-    lyrics: buildLyrics([
+    lines: [
       'Yesterday',
       'All my troubles seemed so far away',
       'Now it looks as though',
@@ -65,8 +87,8 @@ export const songs: Song[] = [
       "I don't know she wouldn't say",
       'I said something wrong',
       'Now I long for yesterday',
-    ]),
-  },
+    ],
+  }, 3),
   {
     id: 'hey-jude',
     title: 'Hey Jude',

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { LyricLine, LyricState, LyricStatus, GameState, JudgeResult } from '../types'
 import { getFallDuration, EXIT_SECONDS, PERFECT_RATIO } from './timing'
+import { sfx } from './sfx'
 
 /** 游戏循环间隔（ms） */
 const TICK_INTERVAL = 50
@@ -98,6 +99,7 @@ export function useGameEngine() {
     }
 
     // 超时检查：滑出屏幕（含宽限期）未完成 → miss
+    let missedNow = false
     for (const lyric of lyricsRef.current) {
       if (lyric.status !== 'falling') continue
       if (elapsed > lyric.line.time + EXIT_SECONDS) {
@@ -105,13 +107,16 @@ export function useGameEngine() {
         lyric.score = -50
         comboRef.current = 0
         missedRef.current++
+        missedNow = true
       }
     }
+    if (missedNow) sfx.miss()
 
     // 全部完成/漏掉 → 游戏结束
     if (allDoneLyrics(lyricsRef.current)) {
       phaseRef.current = 'finished'
       if (intervalRef.current) clearInterval(intervalRef.current)
+      sfx.gameOver()
     }
 
     setGameState(buildState(elapsed))
@@ -149,6 +154,7 @@ export function useGameEngine() {
 
     if (char === nextChar) {
       target.typed++
+      sfx.keyHit()
       if (target.typed >= expected.length) {
         // 完成一句
         target.status = 'completed'
@@ -170,18 +176,22 @@ export function useGameEngine() {
         target.score = score
         scoreRef.current += score
 
-        emitFeedback(timingBonus > 1.0 ? 'perfect' : 'good')
+        const perfect = timingBonus > 1.0
+        emitFeedback(perfect ? 'perfect' : 'good')
+        sfx.lineComplete(perfect)
 
         // 检查是否全部完成
         if (allDoneLyrics(lyricsRef.current)) {
           phaseRef.current = 'finished'
           if (intervalRef.current) clearInterval(intervalRef.current)
+          sfx.gameOver()
         }
       }
     } else {
       scoreRef.current = Math.max(0, scoreRef.current - 30)
       comboRef.current = 0
       emitFeedback('wrong')
+      sfx.wrong()
     }
 
     // 立即推送最新状态：最后一句完成时 interval 会被清除，
@@ -200,6 +210,7 @@ export function useGameEngine() {
       scoreRef.current = Math.max(0, scoreRef.current - 30)
       comboRef.current = 0
       emitFeedback('wrong')
+      sfx.wrong()
       return true
     }
     return false
