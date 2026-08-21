@@ -10,9 +10,10 @@ export default function GameScreen() {
   const navigate = useNavigate()
   const song = songId ? getSongById(songId) : undefined
   const inputRef = useRef<HTMLInputElement>(null)
-  const { gameState, feedback, startGame, inputChar, checkEarlyInput, getLyricPosition } = useGameEngine()
+  const { gameState, feedback, startGame, stopGame, resumeAudio, inputChar, checkEarlyInput, getLyricPosition } = useGameEngine()
   const startedRef = useRef(false)
   const [muted, setMuted] = useState(sfx.isMuted())
+  const [audioBlocked, setAudioBlocked] = useState(false)
 
   const toggleMute = useCallback(() => {
     const next = !muted
@@ -24,8 +25,18 @@ export default function GameScreen() {
   useEffect(() => {
     if (!song || startedRef.current) return
     startedRef.current = true
-    startGame(song.lyrics)
-  }, [song, startGame])
+    startGame(song.lyrics, song.audioSrc)
+
+    // 尝试自动播放；被浏览器拦截时提示点击开始
+    if (song.audioSrc) {
+      resumeAudio().catch(() => setAudioBlocked(true))
+    }
+  }, [song, startGame, resumeAudio])
+
+  // 播放被拦截时，点击按钮手动恢复
+  const resumeOnClick = useCallback(() => {
+    resumeAudio().then(() => setAudioBlocked(false)).catch(() => {})
+  }, [resumeAudio])
 
   // 聚焦输入框
   useEffect(() => {
@@ -94,9 +105,16 @@ export default function GameScreen() {
 
   return (
     <div className="game-screen">
+      {/* 音频被拦截时的手动播放提示（音频播放由引擎内部管理） */}
+      {audioBlocked && (
+        <div className="audio-blocked-overlay">
+          <button onClick={resumeOnClick}>▶ 点击开始播放</button>
+        </div>
+      )}
+
       {/* 顶部状态栏 */}
       <div className="game-header">
-        <button className="back-btn" onClick={() => { startedRef.current = false; navigate('/') }}>
+        <button className="back-btn" onClick={() => { stopGame(); startedRef.current = false; navigate('/') }}>
           ← 返回
         </button>
         <div className="song-info">
