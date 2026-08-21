@@ -16,6 +16,8 @@ export interface Song {
   artist: string
   /** 歌词数据 */
   lyrics: LyricLine[]
+  /** 可选：对应音频文件 URL。存在时游戏时钟跟随音频播放进度，歌词按真实时间戳同步 */
+  audioSrc?: string
 }
 
 /** 歌词在游戏中的生命周期状态 */

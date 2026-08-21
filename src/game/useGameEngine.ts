@@ -62,6 +62,10 @@ export function useGameEngine() {
   const feedbackIdRef = useRef(0)
   const phaseRef = useRef<'idle' | 'playing' | 'paused' | 'finished'>('idle')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** 可选：与歌词同步播放的音频元素（游戏时钟跟随其 currentTime） */
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  /** 音频播放完毕（edended）是否已处理，防止重复收尾 */
+  const endedHandledRef = useRef(false)
 
   // 弹出判定反馈
   const emitFeedback = useCallback((result: JudgeResult) => {
@@ -84,11 +88,17 @@ export function useGameEngine() {
     missedLines: missedRef.current,
   }), [])
 
+  // 当前游戏时间：有音频跟随音频进度，否则用性能时钟
+  const currentElapsed = useCallback(() => {
+    return audioRef.current ? audioRef.current.currentTime : (performance.now() - startTimeRef.current) / 1000
+  }, [])
+
   // 游戏 tick
   const tick = useCallback(() => {
     if (phaseRef.current !== 'playing') return
 
-    const elapsed = (performance.now() - startTimeRef.current) / 1000
+    // 时间源：有音频时跟随音频播放进度，否则用性能时钟
+    const elapsed = currentElapsed()
 
     // 状态流转：pending → falling（进入屏幕即飘落、即可输入）
     for (const lyric of lyricsRef.current) {
@@ -116,15 +126,45 @@ export function useGameEngine() {
     if (allDoneLyrics(lyricsRef.current)) {
       phaseRef.current = 'finished'
       if (intervalRef.current) clearInterval(intervalRef.current)
+      audioRef.current?.pause()
       sfx.gameOver()
     }
 
     setGameState(buildState(elapsed))
-  }, [buildState])
+  }, [buildState, currentElapsed])
 
   // 开始游戏
-  const startGame = useCallback((lyrics: LyricLine[]) => {
+  const startGame = useCallback((lyrics: LyricLine[], audioSrc?: string) => {
     if (intervalRef.current) clearInterval(intervalRef.current)
+
+    // 音频由引擎内部持有（new Audio），避免依赖 React ref 挂载时序
+    if (audioRef.current) {
+      audioRef.current.onended = null
+    }
+    audioRef.current = null
+    endedHandledRef.current = false
+    if (audioSrc) {
+      const a = new Audio(audioSrc)
+      a.preload = 'auto'
+      a.onended = () => {
+        // 音频自然播完：未终结的歌词全部判 miss，立即结束
+        if (endedHandledRef.current) return
+        endedHandledRef.current = true
+        for (const lyric of lyricsRef.current) {
+          if (lyric.status === 'falling' || lyric.status === 'pending') {
+            lyric.status = 'missed'
+            lyric.score = -50
+            missedRef.current++
+          }
+        }
+        comboRef.current = 0
+        phaseRef.current = 'finished'
+        if (intervalRef.current) clearInterval(intervalRef.current)
+        sfx.gameOver()
+        setGameState(buildState(a.currentTime))
+      }
+      audioRef.current = a
+    }
 
     const initial = createInitialState(lyrics)
     lyricsRef.current = initial.lyrics
@@ -139,6 +179,17 @@ export function useGameEngine() {
     setGameState(buildState(0))
     intervalRef.current = setInterval(tick, TICK_INTERVAL)
   }, [buildState, tick])
+
+  // 恢复播放（自动播放被拦截时需要用户手势触发）
+  const resumeAudio = useCallback(async (): Promise<void> => {
+    const a = audioRef.current
+    if (!a) return
+    try {
+      await a.play()
+    } catch {
+      // 仍被拦截，交由 UI 保持提示
+    }
+  }, [])
 
   // 输入字符（飘落全程可输入）
   const inputChar = useCallback((char: string) => {
@@ -165,7 +216,7 @@ export function useGameEngine() {
         }
 
         // 时机评分：以该句的飘落窗口为基准，正点（到达判定线）成功率最高
-        const elapsed = (performance.now() - startTimeRef.current) / 1000
+        const elapsed = currentElapsed()
         const fallDur = getFallDuration(target.line.text)
         const windowLength = fallDur + EXIT_SECONDS
         const progress = (elapsed - (target.line.time - fallDur)) / windowLength
@@ -184,6 +235,7 @@ export function useGameEngine() {
         if (allDoneLyrics(lyricsRef.current)) {
           phaseRef.current = 'finished'
           if (intervalRef.current) clearInterval(intervalRef.current)
+          audioRef.current?.pause()
           sfx.gameOver()
         }
       }
@@ -196,8 +248,8 @@ export function useGameEngine() {
 
     // 立即推送最新状态：最后一句完成时 interval 会被清除，
     // 若不在此渲染，React 将停留在上一帧（表现为"卡在最后一个字母"）
-    setGameState(buildState((performance.now() - startTimeRef.current) / 1000))
-  }, [emitFeedback, buildState])
+    setGameState(buildState(currentElapsed()))
+  }, [emitFeedback, buildState, currentElapsed])
 
   // 提前输入检查：歌词还未进入屏幕就打了它的首字符
   const checkEarlyInput = useCallback((char: string): boolean => {
@@ -218,13 +270,14 @@ export function useGameEngine() {
 
   // 获取歌词位置
   const getLyricPosition = useCallback((lyric: LyricState): number => {
-    return calcPosition(lyric, (performance.now() - startTimeRef.current) / 1000)
-  }, [])
+    return calcPosition(lyric, currentElapsed())
+  }, [currentElapsed])
 
   // 停止
   const stopGame = useCallback(() => {
     phaseRef.current = 'finished'
     if (intervalRef.current) clearInterval(intervalRef.current)
+    audioRef.current?.pause()
   }, [])
 
   // 清理
@@ -239,6 +292,7 @@ export function useGameEngine() {
     feedback,
     startGame,
     stopGame,
+    resumeAudio,
     inputChar,
     checkEarlyInput,
     getLyricPosition,
