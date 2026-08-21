@@ -1,5 +1,9 @@
 import type { LyricLine, Song } from '../../types'
 import { getFallDuration, EXIT_SECONDS } from '../../game/timing'
+import { parseLRC } from '../lrc'
+
+// LRC 真实时间戳
+import countingStarsLrc from '../lrc/counting-stars'
 
 /** 相邻歌词窗口之间的间隙（秒） */
 const GAP = 0.6
@@ -49,7 +53,28 @@ function makeSongParts(
   }).filter((s): s is Song => s !== null)
 }
 
+/** 去除歌词里的标点符号，降低打字难度 */
+function stripPunc(text: string): string {
+  return text.replace(/[,\."'!?;:—\-\(\)\[\]{}<>]/g, '')
+}
+
 export const songs: Song[] = [
+  // ===== 音频同步测试：歌词时间戳对应哔哔声，验证音频驱动的时钟 =====
+  {
+    id: 'audio-sync-demo',
+    title: '音频同步测试',
+    artist: 'Typer 测试',
+    audioSrc: '/music/beeps-demo.wav',
+    lyrics: parseLRC(
+      `[00:01.00]go
+[00:03.60]win
+[00:06.20]hit
+[00:08.80]best
+[00:11.40]try
+[00:14.00]now`,
+    ).map((l, i) => ({ id: i + 1, text: l.text, time: l.time, duration: 2.2 })),
+  },
+
   // ===== 测试曲：极简短词，固定时间轴，验证核心机制 =====
   {
     id: 'test-1',
@@ -114,20 +139,10 @@ export const songs: Song[] = [
     id: 'counting-stars',
     title: 'Counting Stars',
     artist: 'OneRepublic',
-    lyrics: buildLyrics([
-      "Lately I've been I've been losing sleep",
-      'Dreaming about the things that we could be',
-      "But baby I've been I've been praying hard",
-      'Said no more counting dollars',
-      "We'll be counting stars",
-      "Yeah we'll be counting stars",
-      'I see this life like a swinging vine',
-      'Swing my heart across the line',
-      'In my face is flashing signs',
-      'Seek it out and ye shall find',
-      'Take that money watch it burn',
-      'Sink in the river the lessons I learned',
-    ]),
+    audioSrc: '/music/Counting Stars.mp3',
+    lyrics: parseLRC(countingStarsLrc)
+      .filter(l => l.text.length > 1 && !l.text.startsWith('Counting Stars -'))
+      .map((l, i) => ({ id: i + 1, text: stripPunc(l.text), time: l.time, duration: 2.2 })),
   },
   {
     id: 'viva-la-vida',

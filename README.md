@@ -91,17 +91,36 @@ interface LyricLine {
 }
 ```
 
-当前内置 1 首测试曲（极简短词，固定时间轴）+ 5 首真实歌曲：
+当前内置 1 首测试曲（极简短词，固定时间轴）+ 1 首音频同步测试曲（真实音频时钟）+ 5 首真实歌曲：
 
 | 歌曲 | 歌手 |
 |------|------|
-| Yesterday | The Beatles |
+| 音频同步测试 | Typer 测试（哔哔声 WAV，验证音频时钟） |
+| Yesterday · 第 1~3 段 | The Beatles |
 | Hey Jude | The Beatles |
 | Counting Stars | OneRepublic |
 | Viva La Vida | Coldplay |
 | Gloria | The Lumineers |
 
 真实歌曲的时间轴由生成器按句长自动排布（`getFallDuration` 随句长伸缩，保证窗口首尾相接不重叠）。后续计划支持 LRC 文件导入。
+
+## 音频同步播放
+
+歌曲可配 `audioSrc` 字段挂音频文件。有音频时**游戏时钟跟随音频播放进度**（`audio.currentTime`），歌词按真实时间戳（LRC 格式）卡着歌声飘落；无音频时退回按句长生成的自动时间轴。
+
+```ts
+// 歌曲数据里加一行 + 歌词用 LRC 时间戳
+{
+  id: 'demo',
+  audioSrc: '/music/beeps-demo.wav',   // 音频放 public/music/
+  lyrics: parseLRC(`[00:01.00]go\n[00:03.60]win`)...
+}
+```
+
+- LRC 解析：`src/data/lrc.ts` 的 `parseLRC()`
+- 抓取真实歌词：`node scripts/fetch-lrc.mjs "歌手" "歌名" [--save]`（lrclib 免费 API）
+- 生成本地演示音源：`node scripts/make-demo-wav.mjs`
+- 浏览器拦截自动播放时，游戏显示"点击开始播放"按钮
 
 ## 后续规划
 
